@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <!-- PWA / iOS Home Screen Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Attendance">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=5">
+    <link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png?v=5">
+    <link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png?v=5">
+    <link rel="apple-touch-icon" sizes="120x120" href="icons/icon-120.png?v=5">
+    <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png?v=5">
+    <link rel="manifest" href="manifest.json?v=5">
+    
+    <title>Smart Staff Attendance PWA</title>
+    
+    <!-- External Libraries -->
+    <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    
+    <style>
+        :root {
+            --primary: #007aff;
+            --success: #34c759;
+            --danger: #ff3b30;
+            --warning: #ff9500;
+            --background: #f2f2f7;
+            --surface: #ffffff;
+            --text: #1c1c1e;
+        }
+        
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--background);
+            color: var(--text);
+            margin: 0;
+            padding: 10px 20px 20px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            box-sizing: border-box;
+            scroll-padding-bottom: 300px; 
+        }
+        
+        h2 { margin-bottom: 5px; margin-top: 10px; }
+        
+        .app-container {
+            width: 100%;
+            max-width: 400px;
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 40px;
+        }
+        
+        .card {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 16px;
+            width: 100%;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-bottom: 16px;
+            box-sizing: border-box;
+        }
+        
+        #video-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        video { 
+            width: 100% !important; 
+            height: 100% !important; 
+            object-fit: cover; 
+            background: #000;
+        }
+        
+        .btn {
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .btn-primary { background-color: var(--primary); }
+        .btn-secondary { background-color: #5856d6; }
+        .btn-warning { background-color: var(--warning); }
+        .btn-danger { background-color: var(--danger); }
+        .btn-group { display: flex; gap: 8px; margin-top: 10px; }
+        .btn-group .btn { margin-top: 0; flex: 1; font-size: 14px; padding: 10px; }
+        
+        input[type="text"], input[type="number"], input[type="time"], input[type="email"] {
+            width: 100%;
+            padding: 12px;
+            margin-top: 8px;
+            border: 1px solid #c7c7cc;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        label {
+            display: block;
+            margin-top: 12px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        #status { font-weight: bold; text-align: center; color: var(--primary); margin: 8px 0; min-height: 20px;}
+        .active-scan { color: #8e8e93 !important; }
+        .success-scan { color: var(--success) !important; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #c7c7cc; }
+        th { background: #e5e5ea; }
+        #file-input { display: none; }
+        
+        .tabs { display: flex; width: 100%; max-width: 400px; margin-bottom: 15px; background: #e5e5ea; border-radius: 8px; padding: 2px; flex-shrink: 0;}
+        .tab-btn { flex: 1; background: transparent; border: none; padding: 8px 4px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; color: #8e8e93; white-space: nowrap;}
+        .tab-btn.active { background: white; color: var(--text); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .tab-content { display: none; width: 100%; }
+        .tab-content.active { display: block; }
+
+        .reversed-layout h3 { margin-bottom: 12px; }
+        .reversed-layout .btn { margin-top: 0; margin-bottom: 12px; }
+
+        .first-log-entry td {
+            color: #007aff !important;
+            font-weight: bold !important;
+        }
+
+        .staff-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 4px;
+            border-bottom: 1px solid #c7c7cc;
+        }
+        .staff-name-text {
+            font-size: 16px;
+            font-weight: 500;
+        }
+        .inline-del-btn {
+            background-color: var(--danger);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        /* ── Clock In / Clock Out segmented control ── */
+        .clock-segment-wrapper {
+            margin: 12px 0 4px 0;
+        }
+        .clock-segment-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #8e8e93;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+        .clock-segment {
+            display: flex;
+            background: #e5e5ea;
+            border-radius: 9px;
+            padding: 3px;
+            gap: 0;
+        }
+        .clock-seg-btn {
+            flex: 1;
+            border: none;
+            padding: 10px 8px;
+            font-size: 14px;
+            font-weight: 700;
+            border-radius: 7px;
+            cursor: pointer;
+            background: transparent;
+            color: #8e8e93;
+            transition: all 0.18s ease;
+            letter-spacing: 0.2px;
+        }
+        .clock-seg-btn.active-in {
+            background: var(--success);
+            color: #fff;
+            box-shadow: 0 2px 6px rgba(52,199,89,0.35);
+        }
+        .clock-seg-btn.active-out {
+            background: var(--danger);
+            color: #fff;
+            box-shadow: 0 2px 6px rgba(255,59,48,0.35);
+        }
+
+        /* ── Session duration display card ── */
+        .duration-card {
+            background: linear-gradient(135deg, #f2f2f7 0%, #e8eaf0 100%);
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-top: 12px;
+            display: none;
+        }
+        .duration-card.visible { display: block; }
+        .duration-card-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #8e8e93;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            margin-bottom: 4px;
+        }
+        .duration-value {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--primary);
+            letter-spacing: 0.5px;
+            font-variant-numeric: tabular-nums;
+        }
+        .duration-sub {
+            font-size: 11px;
+            color: #8e8e93;
+            margin-top: 3px;
+        }
+        .session-timestamps {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+        }
+        .ts-pill {
+            flex: 1;
+            background: #fff;
+            border-radius: 7px;
+            padding: 7px 10px;
+            text-align: center;
+        }
+        .ts-pill-label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: #8e8e93;
+        }
+        .ts-pill-value {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+            margin-top: 2px;
+        }
+        .ts-pill-value.clocked-in { color: var(--success); }
+        .ts-pill-value.clocked-out { color: var(--danger); }
+
+        /* Log table clock mode badges */
+        .badge-in {
+            display: inline-block;
+            background: var(--success);
+            color: #fff;
+            border-radius: 4px;
+            padding: 1px 5px;
+            font-size: 10px;
+            font-weight: 700;
+            vertical-align: middle;
+            margin-left: 4px;
+        }
+        .badge-out {
+            display: inline-block;
+            background: var(--danger);
+            color: #fff;
+            border-radius: 4px;
+            padding: 1px 5px;
+            font-size: 10px;
+            font-weight: 700;
+            vertical-align: middle;
+            margin-left: 4px;
+        }
+
+        @media print {
+            body * { visibility: hidden; }
+            #log-section, #log-section * { visibility: visible; }
+            #log-section { position: absolute; left: 0; top: 0; width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Staff Attendance</h2>
+    <div id="status">Loading AI Models...</div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('scan-tab', event)">Scan / Reg</button>
+        <button class="tab-btn" onclick="switchTab('staff-tab', event)">Staff List</button>
+        <button class="tab-btn" onclick="switchTab('logs-tab', event)">Logs</button>
+        <button class="tab-btn" onclick="settingsInit(event)">Control</button>
+    </div>
+
+    <div class="app-container" id="main-scroller">
+
+        <!-- Tab 1: Scan & Register -->
+        <div id="scan-tab" class="tab-content active">
+            <div class="card">
+                <div id="video-container">
+                    <video id="video" autoplay muted playsinline></video>
+                </div>
+                <p style="text-align: center; color: #8e8e93; font-size: 14px; margin-top: 8px;" id="frequency-hint">
+                    📸 Smart Scan: Active only when a new person steps in.
+                </p>
+
+                <!-- ── Clock In / Clock Out segmented control ── -->
+                <div class="clock-segment-wrapper">
+                    <div class="clock-segment-label">Session Mode</div>
+                    <div class="clock-segment">
+                        <button class="clock-seg-btn active-in" id="btn-clock-in" onclick="setClockMode('in')">
+                            ⏱ Clock In
+                        </button>
+                        <button class="clock-seg-btn" id="btn-clock-out" onclick="setClockMode('out')">
+                            🏁 Clock Out
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ── Session Duration Display ── -->
+                <div class="duration-card" id="duration-card">
+                    <div class="duration-card-title">Total Time Worked</div>
+                    <div class="duration-value" id="duration-value">— h — m — s</div>
+                    <div class="duration-sub" id="duration-sub">Complete a full Clock In → Clock Out cycle to calculate</div>
+                    <div class="session-timestamps" id="session-timestamps" style="display:none;">
+                        <div class="ts-pill">
+                            <div class="ts-pill-label">Clocked In</div>
+                            <div class="ts-pill-value clocked-in" id="ts-in-value">—</div>
+                        </div>
+                        <div class="ts-pill">
+                            <div class="ts-pill-label">Clocked Out</div>
+                            <div class="ts-pill-value clocked-out" id="ts-out-value">—</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card reversed-layout" id="registration-card">
+                <h3>Register New Staff</h3>
+                <button class="btn btn-secondary" id="register-btn" disabled>Save Current Face</button>
+                <input type="text" id="staff-name" placeholder="Enter Staff Name">
+            </div>
+        </div>
+
+        <!-- Tab 2: Registered Staff Directory -->
+        <div id="staff-tab" class="tab-content">
+            <div class="card">
+                <h3>Registered Staff Directory</h3>
+                <div id="staff-list-container" style="max-height: 400px; overflow-y: auto;">
+                    <!-- Profiles injected dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 3: Logs -->
+        <div id="logs-tab" class="tab-content">
+            <div class="card" id="log-section">
+                <h3>Attendance Log</h3>
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="exportToExcel()">Export Excel</button>
+                    <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">Import</button>
+                    <button class="btn" style="background-color:#8e8e93;" onclick="window.print()">Print</button>
+                </div>
+                <button class="btn btn-secondary" onclick="manualEmailLogs()">Send Logs to Email Now</button>
+                <input type="file" id="file-input" accept=".json" onchange="importData(event)">
+                
+                <table id="log-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Date</th>
+                            <th>Time</th>
+                            <th>Mode</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab 4: Settings & Maintenance Control -->
+        <div id="settings-tab" class="tab-content">
+            <div class="card">
+                <h3>Automation Settings</h3>
+                
+                <label for="scan-freq-input">Camera Frame Check Speed (seconds)</label>
+                <input type="number" id="scan-freq-input" value="1" min="1" max="10" onchange="updateTrackingFrequency()">
+                
+                <label for="email-to-input">Recipient Reporting Email Address</label>
+                <input type="email" id="email-to-input" placeholder="manager@company.com" onchange="saveSettings()">
+
+                <label for="schedule-time-input">Daily Log Dispatch Execution Time</label>
+                <input type="time" id="schedule-time-input" value="18:00" onchange="saveSettings()">
+                
+                <h4 style="margin-top:20px; margin-bottom:5px;">EmailJS Gateway Credentials</h4>
+                <input type="text" id="ejs-public-key" placeholder="EmailJS Public Key" onchange="saveSettings()">
+                <input type="text" id="ejs-service-id" placeholder="EmailJS Service ID" onchange="saveSettings()">
+                <input type="text" id="ejs-template-id" placeholder="EmailJS Template ID" onchange="saveSettings()">
+            </div>
+
+            <div class="card" id="settings-card">
+                <h3 style="color: var(--warning);">Maintenance Zone</h3>
+                
+                <div style="border-bottom: 1px dashed #c7c7cc; padding-bottom: 15px; margin-bottom: 15px;">
+                    <p style="font-size: 14px; color: #8e8e93; margin-top:0;">Wipe all entry history time records while keeping your staff's registered face profiles completely safe.</p>
+                    <input type="text" id="confirm-clear-logs-input" placeholder="Type CLEAR LOGS to confirm">
+                    <button class="btn btn-warning" onclick="purgeLogsOnly()">Purge History Logs</button>
+                </div>
+                
+                <div>
+                    <h3 style="color: var(--danger); margin-top:0;">Factory Reset</h3>
+                    <p style="font-size: 14px; color: #8e8e93;">Completely erase face configurations, all timestamps, and your custom setup settings back to clean defaults.</p>
+                    <input type="text" id="confirm-reset-all-input" placeholder="Type RESET ALL to confirm">
+                    <button class="btn btn-danger" onclick="factoryResetEverything()">Reset Entire System</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const statusDiv = document.getElementById('status');
+        const registerBtn = document.getElementById('register-btn');
+        const staffNameInput = document.getElementById('staff-name');
+        const logBody = document.getElementById('log-body');
+        const mainScroller = document.getElementById('main-scroller');
+        const frequencyHint = document.getElementById('frequency-hint');
+        const staffListContainer = document.getElementById('staff-list-container');
+
+        let registeredProfiles = JSON.parse(localStorage.getItem('registeredProfiles')) || [];
+        let attendanceLogs = JSON.parse(localStorage.getItem('attendanceLogs')) || [];
+        
+        let trackingIntervalId = null;
+        let heartbeatIntervalId = null;
+        let lastDispatchedDate = localStorage.getItem('lastDispatchedDate') || "";
+        let currentPersonInFront = null;
+        let lastVideoFrameTime = -1;
+
+        // ── Clock Mode State ──────────────────────────────────────────
+        // 'in' = next scan records a Clock In anchor
+        // 'out' = next scan records a Clock Out anchor
+        let clockMode = 'in';
+
+        // Per-person session tracking: { [name]: { clockInTime, clockInRaw, clockOutTime, clockOutRaw } }
+        let sessionData = JSON.parse(localStorage.getItem('sessionData')) || {};
+
+        let appSettings = JSON.parse(localStorage.getItem('appSettings')) || {
+            frequency: 1,
+            emailTo: "",
+            dispatchTime: "18:00",
+            publicKey: "",
+            serviceId: "",
+            templateId: ""
+        };
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(err => console.log("SW registration failed", err));
+        }
+
+        // ── Web Audio Beep Synthesizer ────────────────────────────────
+        let audioCtx = null;
+
+        function getAudioContext() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            return audioCtx;
+        }
+
+        function playBeep(type = 'in') {
+            try {
+                const ctx = getAudioContext();
+                // Resume if suspended (iOS requires user gesture unlock)
+                if (ctx.state === 'suspended') ctx.resume();
+
+                const oscillator = ctx.createOscillator();
+                const gainNode = ctx.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(ctx.destination);
+
+                if (type === 'in') {
+                    // Clock In: two ascending tones — welcoming
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+                    oscillator.frequency.setValueAtTime(1100, ctx.currentTime + 0.12);
+                } else {
+                    // Clock Out: two descending tones — departure
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(1100, ctx.currentTime);
+                    oscillator.frequency.setValueAtTime(700, ctx.currentTime + 0.12);
+                }
+
+                gainNode.gain.setValueAtTime(0.0, ctx.currentTime);
+                gainNode.gain.linearRampToValueAtTime(0.45, ctx.currentTime + 0.02);
+                gainNode.gain.setValueAtTime(0.45, ctx.currentTime + 0.18);
+                gainNode.gain.linearRampToValueAtTime(0.0, ctx.currentTime + 0.28);
+
+                oscillator.start(ctx.currentTime);
+                oscillator.stop(ctx.currentTime + 0.30);
+            } catch (e) {
+                console.warn('Audio playback failed:', e);
+            }
+        }
+
+        // ── Clock Mode UI ─────────────────────────────────────────────
+        function setClockMode(mode) {
+            clockMode = mode;
+            const btnIn  = document.getElementById('btn-clock-in');
+            const btnOut = document.getElementById('btn-clock-out');
+            btnIn.className  = 'clock-seg-btn' + (mode === 'in'  ? ' active-in'  : '');
+            btnOut.className = 'clock-seg-btn' + (mode === 'out' ? ' active-out' : '');
+            // Unlock AudioContext on user gesture
+            getAudioContext();
+        }
+
+        function updateDurationDisplay(name) {
+            const card = document.getElementById('duration-card');
+            const valEl = document.getElementById('duration-value');
+            const subEl = document.getElementById('duration-sub');
+            const tsRow = document.getElementById('session-timestamps');
+            const tsIn  = document.getElementById('ts-in-value');
+            const tsOut = document.getElementById('ts-out-value');
+
+            card.classList.add('visible');
+
+            const session = sessionData[name];
+            if (!session) return;
+
+            const hasIn  = !!session.clockInRaw;
+            const hasOut = !!session.clockOutRaw;
+
+            tsIn.textContent  = hasIn  ? session.clockInTime  : '—';
+            tsOut.textContent = hasOut ? session.clockOutTime : '—';
+
+            if (hasIn && hasOut) {
+                const diffMs = session.clockOutRaw - session.clockInRaw;
+                const totalSec = Math.round(diffMs / 1000);
+                const h = Math.floor(totalSec / 3600);
+                const m = Math.floor((totalSec % 3600) / 60);
+                const s = totalSec % 60;
+                valEl.textContent = `${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
+                subEl.textContent = `Session for ${name}`;
+                tsRow.style.display = 'flex';
+            } else if (hasIn && !hasOut) {
+                valEl.textContent = '— h — m — s';
+                subEl.textContent = `${name} clocked in. Waiting for Clock Out…`;
+                tsRow.style.display = 'flex';
+            } else {
+                valEl.textContent = '— h — m — s';
+                subEl.textContent = 'Complete a full Clock In → Clock Out cycle to calculate';
+                tsRow.style.display = 'none';
+            }
+        }
+
+        // ── Continuous Logging Filter ─────────────────────────────────
+        // The app logs continuously; for the definitive session anchors
+        // we grab: first entry of the day (Clock In) and latest entry
+        // of the day (Clock Out) per person. This mirrors exactly:
+        //   T_in  = first log record for that person on that date
+        //   T_out = last  log record for that person on that date
+        function getSessionAnchorsFromLogs(name, dateStr) {
+            const dayLogs = attendanceLogs.filter(l => l.name === name && l.date === dateStr);
+            if (dayLogs.length === 0) return { first: null, last: null };
+            // attendanceLogs is stored newest-first (unshift), so last in array = earliest
+            const first = dayLogs[dayLogs.length - 1];
+            const last  = dayLogs[0];
+            return { first, last };
+        }
+
+        function applySettingsToUI() {
+            document.getElementById('scan-freq-input').value = appSettings.frequency;
+            document.getElementById('email-to-input').value = appSettings.emailTo;
+            document.getElementById('schedule-time-input').value = appSettings.dispatchTime;
+            document.getElementById('ejs-public-key').value = appSettings.publicKey;
+            document.getElementById('ejs-service-id').value = appSettings.serviceId;
+            document.getElementById('ejs-template-id').value = appSettings.templateId;
+            
+            frequencyHint.innerText = `Smart Scan: Capturing only when a new person steps in.`;
+            
+            if(appSettings.publicKey) {
+                emailjs.init(appSettings.publicKey);
+            }
+        }
+
+        function saveSettings() {
+            appSettings.frequency = parseInt(document.getElementById('scan-freq-input').value) || 1;
+            appSettings.emailTo = document.getElementById('email-to-input').value.trim();
+            appSettings.dispatchTime = document.getElementById('schedule-time-input').value;
+            appSettings.publicKey = document.getElementById('ejs-public-key').value.trim();
+            appSettings.serviceId = document.getElementById('ejs-service-id').value.trim();
+            appSettings.templateId = document.getElementById('ejs-template-id').value.trim();
+            
+            localStorage.setItem('appSettings', JSON.stringify(appSettings));
+            if(appSettings.publicKey) {
+                emailjs.init(appSettings.publicKey);
+            }
+        }
+
+        function updateTrackingFrequency() {
+            saveSettings();
+            if (video.srcObject) {
+                startTrackingLoop();
+            }
+        }
+
+        function settingsInit(event) {
+            switchTab('settings-tab', event);
+            const inputElements = [staffNameInput, document.getElementById('confirm-clear-logs-input'), document.getElementById('confirm-reset-all-input')];
+            inputElements.forEach(element => {
+                if(element) {
+                    element.addEventListener('focus', (e) => {
+                        setTimeout(() => {
+                            e.target.closest('div, .card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }, 300);
+                    });
+                }
+            });
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                restartCameraSafely();
+            }
+        });
+
+        async function restartCameraSafely() {
+            if (video.srcObject) {
+                const tracks = video.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+            }
+            startCamera();
+        }
+
+        function switchTab(tabId, event) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+            mainScroller.scrollTop = 0;
+
+            if (tabId === 'staff-tab') {
+                renderStaffDirectoryList();
+            }
+        }
+
+        function renderStaffDirectoryList() {
+            if (registeredProfiles.length === 0) {
+                staffListContainer.innerHTML = `<p style="text-align:center; color:#8e8e93; margin-top:20px;">No registered staff profiles found in memory.</p>`;
+                return;
+            }
+            
+            staffListContainer.innerHTML = registeredProfiles.map((profile, index) => `
+                <div class="staff-item">
+                    <span class="staff-name-text">${profile.name}</span>
+                    <button class="inline-del-btn" onclick="removeSingleEmployee(${index}, '${profile.name}')">Remove</button>
+                </div>
+            `).join('');
+        }
+
+        window.removeSingleEmployee = function(index, name) {
+            if (confirm(`Are you completely sure you want to remove ${name} from the face profile registration index?`)) {
+                registeredProfiles.splice(index, 1);
+                localStorage.setItem('registeredProfiles', JSON.stringify(registeredProfiles));
+                renderStaffDirectoryList();
+                if (currentPersonInFront === name) currentPersonInFront = null;
+            }
+        }
+
+        async function init() {
+            try {
+                applySettingsToUI();
+                const MODEL_URL = 'https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js/weights/';
+                await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+                await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+                await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+                
+                statusDiv.innerText = "Models Loaded. Starting Camera...";
+                startCamera();
+                startAutomationCronWatcher();
+                startCameraHeartbeatMonitor();
+            } catch (e) {
+                statusDiv.innerText = "Model loading failed. Verify connection.";
+                console.error(e);
+            }
+        }
+
+        function startCamera() {
+            const constraints = {
+                video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+                audio: false
+            };
+
+            navigator.mediaDevices.getUserMedia(constraints)
+                .then(stream => {
+                    video.srcObject = stream;
+                    statusDiv.innerText = "System Idle: Waiting for Staff...";
+                    statusDiv.className = "active-scan";
+                    registerBtn.disabled = false;
+                    video.play().catch(e => console.log("Video play interrupted:", e));
+                })
+                .catch(err => {
+                    statusDiv.innerText = "Camera access error. Verify permissions.";
+                    console.error(err);
+                });
+        }
+
+        function startCameraHeartbeatMonitor() {
+            if (heartbeatIntervalId) clearInterval(heartbeatIntervalId);
+            heartbeatIntervalId = setInterval(() => {
+                if (!video.paused && video.srcObject) {
+                    if (video.currentTime === lastVideoFrameTime) {
+                        restartCameraSafely();
+                    } else {
+                        lastVideoFrameTime = video.currentTime;
+                    }
+                }
+            }, 3000);
+        }
+
+        video.addEventListener('playing', () => {
+            startTrackingLoop();
+        });
+
+        async function getFaceDescriptor() {
+            if (video.paused || video.ended || video.videoWidth === 0) return null;
+            const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+                .withFaceLandmarks()
+                .withFaceDescriptor();
+            return detection ? detection.descriptor : null;
+        }
+
+        async function startTrackingLoop() {
+            if (trackingIntervalId) {
+                clearInterval(trackingIntervalId);
+            }
+            trackingIntervalId = setInterval(async () => {
+                if (registeredProfiles.length === 0) return;
+                const currentDescriptor = await getFaceDescriptor();
+                                  
+                if (!currentDescriptor) {
+                    if (currentPersonInFront !== null) {
+                        currentPersonInFront = null;
+                        statusDiv.innerText = "System Idle: Waiting for Staff...";
+                        statusDiv.className = "active-scan";
+                    }
+                    return;
+                }
+                const LabeledDescriptors = registeredProfiles.map(p => 
+                     new faceapi.LabeledFaceDescriptors(p.name, [new Float32Array(p.descriptor)])
+                );
+                                  
+                const faceMatcher = new faceapi.FaceMatcher(LabeledDescriptors, 0.5);
+                const bestMatch = faceMatcher.findBestMatch(currentDescriptor);
+                if (bestMatch.label !== 'unknown') {
+                    if (currentPersonInFront === bestMatch.label) {
+                        statusDiv.innerText = `${bestMatch.label} in range (Monitoring…)`;
+                        statusDiv.className = "success-scan";
+                        return; 
+                    }
+                                          
+                    currentPersonInFront = bestMatch.label;
+                    logAttendance(bestMatch.label);
+                } else {
+                    if (currentPersonInFront !== "unknown") {
+                        currentPersonInFront = "unknown";
+                        statusDiv.innerText = "Unregistered face detected.";
+                        statusDiv.className = "active-scan";
+                    }
+                }
+            }, appSettings.frequency * 1000); 
+        }
+
+        function logAttendance(name) {
+            const now = new Date();
+            const dateStr = now.toLocaleDateString();
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+            // Determine if this is a session boundary record
+            // A boundary record triggers when mode switches: first appearance = Clock In, next = Clock Out
+            const isClockIn  = (clockMode === 'in');
+            const isClockOut = (clockMode === 'out');
+
+            const entry = { name, date: dateStr, time: timeStr, mode: clockMode };
+            attendanceLogs.unshift(entry);
+            localStorage.setItem('attendanceLogs', JSON.stringify(attendanceLogs));
+
+            // ── Session anchor logic ─────────────────────────────────
+            // We track the very first scan (Clock In) and the very last
+            // scan (Clock Out) to compute the definitive worked duration.
+            if (!sessionData[name]) sessionData[name] = {};
+
+            if (isClockIn) {
+                // First log of session: store T_in
+                sessionData[name].clockInRaw  = now.getTime();
+                sessionData[name].clockInTime  = timeStr;
+                sessionData[name].clockOutRaw  = null;
+                sessionData[name].clockOutTime = null;
+                // ── Beep: session start ──
+                playBeep('in');
+                statusDiv.innerText = `⏱ Clocked In: ${name} (${timeStr})`;
+            } else {
+                // Last log of session: store T_out
+                sessionData[name].clockOutRaw  = now.getTime();
+                sessionData[name].clockOutTime  = timeStr;
+                // ── Beep: session end ──
+                playBeep('out');
+                statusDiv.innerText = `🏁 Clocked Out: ${name} (${timeStr})`;
+            }
+
+            localStorage.setItem('sessionData', JSON.stringify(sessionData));
+            statusDiv.className = "success-scan";
+
+            // Refresh UI
+            updateDurationDisplay(name);
+            renderLogs();
+        }
+
+        registerBtn.addEventListener('click', async () => {
+            const name = staffNameInput.value.trim();
+            if (!name) return alert("Please enter a name first.");
+                          
+            statusDiv.innerText = "Capturing...";
+            const descriptor = await getFaceDescriptor();
+                          
+            if (descriptor) {
+                registeredProfiles.push({ name, descriptor: Array.from(descriptor) });
+                localStorage.setItem('registeredProfiles', JSON.stringify(registeredProfiles));
+                                  
+                statusDiv.innerText = `Registered: ${name}`;
+                staffNameInput.value = '';
+                staffNameInput.blur();
+                setTimeout(() => { statusDiv.innerText = "System Idle: Waiting for Staff..."; statusDiv.className="active-scan"; }, 2000);
+            } else {
+                statusDiv.innerText = "No face seen. Try again.";
+            }
+        });
+
+        function checkIsFirstDailyLog(currentLog, fullDatabase) {
+            const targetedMatches = fullDatabase.filter(item => item.date === currentLog.date && item.name === currentLog.name);
+            return targetedMatches[targetedMatches.length - 1] === currentLog;
+        }
+
+        function renderLogs() {
+            logBody.innerHTML = attendanceLogs.map(log => {
+                const isFirstEntryOfDailyContext = checkIsFirstDailyLog(log, attendanceLogs);
+                const appliedClass = isFirstEntryOfDailyContext ? 'first-log-entry' : '';
+                const modeBadge = log.mode === 'in'
+                    ? '<span class="badge-in">IN</span>'
+                    : log.mode === 'out'
+                        ? '<span class="badge-out">OUT</span>'
+                        : '';
+                                  
+                return `
+                    <tr class="${appliedClass}">
+                        <td>${log.name}</td>
+                        <td>${log.date}</td>
+                        <td>${log.time}</td>
+                        <td>${modeBadge}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function generateLogsHtmlTable() {
+            if(attendanceLogs.length === 0) return "<p>No entries logged for this period.</p>";
+            return `
+                <table style='border-collapse:collapse;width:100%;'>
+                    <thead style='background:#f2f2f7;'>
+                        <tr>
+                            <th style='border:1px solid #ccc;padding:8px;text-align:left;'>Name</th>
+                            <th style='border:1px solid #ccc;padding:8px;text-align:left;'>Date</th>
+                            <th style='border:1px solid #ccc;padding:8px;text-align:left;'>Time</th>
+                            <th style='border:1px solid #ccc;padding:8px;text-align:left;'>Mode</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${attendanceLogs.map(log => {
+                            const isFirst = checkIsFirstDailyLog(log, attendanceLogs);
+                            const inlineStyle = isFirst ? "style='border:1px solid #ccc;padding:8px;color:#007aff;font-weight:bold;'" : "style='border:1px solid #ccc;padding:8px;'";
+                            const modeText = log.mode === 'in' ? 'Clock In' : log.mode === 'out' ? 'Clock Out' : '';
+                                                          
+                            return `
+                                <tr>
+                                    <td ${inlineStyle}>${log.name}</td>
+                                    <td ${inlineStyle}>${log.date}</td>
+                                    <td ${inlineStyle}>${log.time}</td>
+                                    <td ${inlineStyle}>${modeText}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        async function dispatchAttendanceEmail() {
+            if (!appSettings.emailTo || !appSettings.serviceId || !appSettings.templateId) {
+                return false;
+            }
+            const templateParams = {
+                email_to: appSettings.emailTo,
+                subject: `Daily Staff Attendance Report - ${new Date().toLocaleDateString()}`,
+                table_data: generateLogsHtmlTable()
+            };
+            try {
+                await emailjs.send(appSettings.serviceId, appSettings.templateId, templateParams);
+                return true;
+            } catch (error) {
+                console.error("EmailJS failure:", error);
+                return false;
+            }
+        }
+
+        function manualEmailLogs() {
+            if(!appSettings.emailTo || !appSettings.serviceId || !appSettings.templateId) {
+                return alert("Please configure your EmailJS credentials inside the System Control tab.");
+            }
+            statusDiv.innerText = "Mailing log database...";
+            dispatchAttendanceEmail().then(success => {
+                if(success) {
+                    alert(`Attendance logs successfully sent to ${appSettings.emailTo}`);
+                } else {
+                    alert("Email dispatch failed.");
+                }
+                statusDiv.innerText = "System Idle: Waiting for Staff...";
+                statusDiv.className = "active-scan";
+            });
+        }
+
+        function startAutomationCronWatcher() {
+            setInterval(() => {
+                const now = new Date();
+                const currentDayString = now.toDateString();
+                if (currentDayString === lastDispatchedDate) return;
+                const currentHours = String(now.getHours()).padStart(2, '0');
+                const currentMinutes = String(now.getMinutes()).padStart(2, '0');
+                const currentTimeString = `${currentHours}:${currentMinutes}`;
+                if (currentTimeString === appSettings.dispatchTime) {
+                    dispatchAttendanceEmail().then(sent => {
+                        if(sent) {
+                            lastDispatchedDate = currentDayString;
+                            localStorage.setItem('lastDispatchedDate', lastDispatchedDate);
+                        }
+                    });
+                }
+            }, 30000); 
+        }
+
+        window.purgeLogsOnly = function() {
+            const check = document.getElementById('confirm-clear-logs-input').value.trim();
+            if (check === "CLEAR LOGS") {
+                if (confirm("Are you certain you want to erase historical check-in records? Registered staff faces will remain untouched.")) {
+                    localStorage.removeItem('attendanceLogs');
+                    localStorage.removeItem('sessionData');
+                    attendanceLogs = [];
+                    sessionData = {};
+                    renderLogs();
+                    document.getElementById('confirm-clear-logs-input').value = "";
+                    document.getElementById('confirm-clear-logs-input').blur();
+                    statusDiv.innerText = "Time records cleared.";
+                    alert("Attendance history records cleared successfully.");
+                    switchTab('scan-tab', { target: document.querySelector('.tab-btn') });
+                }
+            } else {
+                alert("Incorrect phrase. Type 'CLEAR LOGS' to execute.");
+            }
+        };
+
+        window.factoryResetEverything = function() {
+            const check = document.getElementById('confirm-reset-all-input').value.trim();
+            if (check === "RESET ALL") {
+                if (confirm("WARNING: This permanently deletes all registered staff profiles, timestamps, and configuration settings. Proceed?")) {
+                    localStorage.clear();
+                    registeredProfiles = [];
+                    attendanceLogs = [];
+                    sessionData = {};
+                    appSettings = { frequency: 1, emailTo: "", dispatchTime: "18:00", publicKey: "", serviceId: "", templateId: "" };
+                    
+                    renderLogs();
+                    applySettingsToUI();
+                    
+                    document.getElementById('confirm-reset-all-input').value = "";
+                    document.getElementById('confirm-reset-all-input').blur();
+                    alert("System completely reset to factory defaults.");
+                    location.reload();
+                }
+            } else {
+                alert("Security phrase invalid. You must precisely type DELETE.");
+            }
+        };
+
+        function exportToExcel() {
+            if (attendanceLogs.length === 0) return alert("No logs to export.");
+            const exportData = attendanceLogs.map(l => ({
+                Name: l.name,
+                Date: l.date,
+                Time: l.time,
+                Mode: l.mode === 'in' ? 'Clock In' : l.mode === 'out' ? 'Clock Out' : ''
+            }));
+            const worksheet = XLSX.utils.json_to_sheet(exportData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance");
+            XLSX.writeFile(workbook, `Attendance_Log_${new Date().toISOString().slice(0,10)}.xlsx`);
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (data.profiles && data.logs) {
+                        registeredProfiles = data.profiles;
+                        attendanceLogs = data.logs;
+                        localStorage.setItem('registeredProfiles', JSON.stringify(registeredProfiles));
+                        localStorage.setItem('attendanceLogs', JSON.stringify(attendanceLogs));
+                        renderLogs();
+                        statusDiv.innerText = "Data imported successfully!";
+                    }
+                } catch (err) {
+                    alert("Error processing file structure.");
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        window.onload = () => {
+            init();
+            renderLogs();
+        };
+    </script>
+</body>
+</html>
