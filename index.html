@@ -291,6 +291,64 @@
             margin-left: 4px;
         }
 
+        /* ── Hours Tab ── */
+        .hours-day-block {
+            border: 1px solid #e5e5ea;
+            border-radius: 10px;
+            margin-bottom: 12px;
+            overflow: hidden;
+        }
+        .hours-day-header {
+            background: #f2f2f7;
+            padding: 10px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .hours-day-date {
+            font-size: 13px;
+            font-weight: 700;
+            color: #3a3a3c;
+        }
+        .hours-staff-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 11px 14px;
+            border-top: 1px solid #e5e5ea;
+            background: #fff;
+        }
+        .hours-staff-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text);
+        }
+        .hours-staff-meta {
+            font-size: 11px;
+            color: #8e8e93;
+            margin-top: 2px;
+        }
+        .hours-net-pill {
+            background: #e8f5e9;
+            color: #1b5e20;
+            border-radius: 8px;
+            padding: 5px 11px;
+            font-size: 13px;
+            font-weight: 700;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+        .hours-net-pill.incomplete {
+            background: #fff3e0;
+            color: #e65100;
+        }
+        .hours-empty {
+            text-align: center;
+            color: #8e8e93;
+            padding: 30px 0;
+            font-size: 14px;
+        }
+
         @media print {
             body * { visibility: hidden; }
             #log-section, #log-section * { visibility: visible; }
@@ -305,8 +363,9 @@
 
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('scan-tab', event)">Scan / Reg</button>
-        <button class="tab-btn" onclick="switchTab('staff-tab', event)">Staff List</button>
+        <button class="tab-btn" onclick="switchTab('staff-tab', event)">Staff</button>
         <button class="tab-btn" onclick="switchTab('logs-tab', event)">Logs</button>
+        <button class="tab-btn" onclick="hoursTabInit(event)">Hours</button>
         <button class="tab-btn" onclick="settingsInit(event)">Control</button>
     </div>
 
@@ -355,6 +414,9 @@
 
             <div class="card reversed-layout" id="registration-card">
                 <h3>Register New Staff</h3>
+                <p style="font-size:13px;color:#8e8e93;margin:0 0 10px 0;">
+                    ℹ️ Register once — the same face profile is used for both Clock In <em>and</em> Clock Out. No need to re-register.
+                </p>
                 <button class="btn btn-secondary" id="register-btn" disabled>Save Current Face</button>
                 <input type="text" id="staff-name" placeholder="Enter Staff Name">
             </div>
@@ -389,6 +451,7 @@
                             <th>Date</th>
                             <th>Time</th>
                             <th>Mode</th>
+                            <th>Net Hours</th>
                         </tr>
                     </thead>
                     <tbody id="log-body"></tbody>
@@ -396,7 +459,26 @@
             </div>
         </div>
 
-        <!-- Tab 4: Settings & Maintenance Control -->
+        <!-- Tab 4: Net Working Hours Summary -->
+        <div id="hours-tab" class="tab-content">
+            <div class="card">
+                <h3>Net Working Hours</h3>
+                <p style="font-size:13px;color:#8e8e93;margin:0 0 12px 0;">
+                    Calculated as: Last scan time − First scan time, per person per day.
+                </p>
+                <div id="hours-filter-row" style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+                    <select id="hours-filter-name" onchange="renderHoursTab()" style="flex:1;padding:9px 10px;border:1px solid #c7c7cc;border-radius:6px;font-size:14px;background:#fff;">
+                        <option value="">All Staff</option>
+                    </select>
+                    <select id="hours-filter-date" onchange="renderHoursTab()" style="flex:1;padding:9px 10px;border:1px solid #c7c7cc;border-radius:6px;font-size:14px;background:#fff;">
+                        <option value="">All Dates</option>
+                    </select>
+                </div>
+                <div id="hours-summary-list"></div>
+            </div>
+        </div>
+
+        <!-- Tab 5: Settings & Maintenance Control -->
         <div id="settings-tab" class="tab-content">
             <div class="card">
                 <h3>Automation Settings</h3>
@@ -454,6 +536,10 @@
         let lastDispatchedDate = localStorage.getItem('lastDispatchedDate') || "";
         let currentPersonInFront = null;
         let lastVideoFrameTime = -1;
+
+        // Single persistent stream — never stopped, only muted/resumed to avoid re-permission prompts
+        let persistentStream = null;
+        let cameraPermissionGranted = false;
 
         // ── Clock Mode State ──────────────────────────────────────────
         // 'in' = next scan records a Clock In anchor
@@ -543,32 +629,28 @@
 
             card.classList.add('visible');
 
-            const session = sessionData[name];
-            if (!session) return;
+            const dateStr = new Date().toLocaleDateString();
+            const net = computeNetHours(name, dateStr);
 
-            const hasIn  = !!session.clockInRaw;
-            const hasOut = !!session.clockOutRaw;
-
-            tsIn.textContent  = hasIn  ? session.clockInTime  : '—';
-            tsOut.textContent = hasOut ? session.clockOutTime : '—';
-
-            if (hasIn && hasOut) {
-                const diffMs = session.clockOutRaw - session.clockInRaw;
-                const totalSec = Math.round(diffMs / 1000);
-                const h = Math.floor(totalSec / 3600);
-                const m = Math.floor((totalSec % 3600) / 60);
-                const s = totalSec % 60;
-                valEl.textContent = `${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
-                subEl.textContent = `Session for ${name}`;
-                tsRow.style.display = 'flex';
-            } else if (hasIn && !hasOut) {
-                valEl.textContent = '— h — m — s';
-                subEl.textContent = `${name} clocked in. Waiting for Clock Out…`;
-                tsRow.style.display = 'flex';
-            } else {
+            if (!net) {
                 valEl.textContent = '— h — m — s';
                 subEl.textContent = 'Complete a full Clock In → Clock Out cycle to calculate';
                 tsRow.style.display = 'none';
+                return;
+            }
+
+            tsIn.textContent  = net.firstTime || '—';
+            tsOut.textContent = net.lastTime  || '—';
+            tsRow.style.display = 'flex';
+
+            if (net.formatted) {
+                valEl.textContent = net.formatted;
+                subEl.textContent = `Total time worked today — ${name}`;
+            } else {
+                valEl.textContent = '— h — m — s';
+                subEl.textContent = net.lastTime
+                    ? 'Invalid time range — check entries'
+                    : `${name} clocked in. Waiting for Clock Out…`;
             }
         }
 
@@ -639,16 +721,101 @@
 
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
-                restartCameraSafely();
+                resumeCameraAfterBackground();
+            } else {
+                // App went to background — pause tracking to save battery
+                if (trackingIntervalId) clearInterval(trackingIntervalId);
             }
         });
 
-        async function restartCameraSafely() {
-            if (video.srcObject) {
-                const tracks = video.srcObject.getTracks();
-                tracks.forEach(track => track.stop());
+        // Re-enable tracks and resume video WITHOUT calling getUserMedia again (no permission prompt)
+        async function resumeCameraAfterBackground() {
+            if (!persistentStream) {
+                // First boot or stream lost entirely — only time we call getUserMedia
+                await startCamera();
+                return;
             }
-            startCamera();
+            // Re-enable any tracks that may have been disabled
+            persistentStream.getTracks().forEach(track => { track.enabled = true; });
+
+            if (video.srcObject !== persistentStream) {
+                video.srcObject = persistentStream;
+            }
+            try {
+                await video.play();
+            } catch (e) { /* already playing */ }
+
+            startTrackingLoop();
+            statusDiv.innerText = "System Idle: Waiting for Staff...";
+            statusDiv.className = "active-scan";
+        }
+
+        // Hard recovery: only called when stream is confirmed dead (readyState === 'ended')
+        async function hardRestartCamera() {
+            console.warn("Hard camera restart triggered — stream ended.");
+            if (persistentStream) {
+                persistentStream.getTracks().forEach(t => t.stop());
+                persistentStream = null;
+            }
+            await startCamera();
+        }
+
+        // ── Core net-hours engine ─────────────────────────────────────
+        // For a given person+date, finds the FIRST and LAST log entry
+        // in attendanceLogs and returns the diff. No reliance on sessionData.
+        function computeNetHours(name, dateStr) {
+            const dayLogs = attendanceLogs.filter(l => l.name === name && l.date === dateStr);
+            if (dayLogs.length === 0) return null;
+
+            // attendanceLogs is newest-first (unshift), so:
+            //   [0]                 = most recent  = LAST scan = Clock Out anchor
+            //   [dayLogs.length-1]  = oldest entry = FIRST scan = Clock In anchor
+            const lastEntry  = dayLogs[0];
+            const firstEntry = dayLogs[dayLogs.length - 1];
+
+            if (firstEntry === lastEntry) {
+                // Only one entry — can't compute a range
+                return { firstTime: firstEntry.time, lastTime: null, diffMs: null, formatted: null };
+            }
+
+            // Parse time strings to Date objects using today's date as base
+            const parseTime = (timeStr, dateRef) => {
+                const [timePart, meridiem] = timeStr.split(' ');
+                let [h, m, s] = timePart.split(':').map(Number);
+                if (meridiem) {
+                    if (meridiem.toLowerCase() === 'pm' && h !== 12) h += 12;
+                    if (meridiem.toLowerCase() === 'am' && h === 12) h = 0;
+                }
+                const d = new Date(dateRef + ' 2000'); // use year 2000 as neutral base
+                d.setHours(h, m, s || 0, 0);
+                return d;
+            };
+
+            const tIn  = parseTime(firstEntry.time, dateStr);
+            const tOut = parseTime(lastEntry.time, dateStr);
+            const diffMs = tOut - tIn;
+
+            if (diffMs <= 0) return { firstTime: firstEntry.time, lastTime: lastEntry.time, diffMs: null, formatted: null };
+
+            const totalSec = Math.round(diffMs / 1000);
+            const h = Math.floor(totalSec / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            const formatted = `${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
+
+            return { firstTime: firstEntry.time, lastTime: lastEntry.time, diffMs, formatted };
+        }
+
+        // Returns unique sorted [{ name, date }] pairs from logs
+        function getUniquePersonDays() {
+            const seen = new Set();
+            const pairs = [];
+            // Reverse to get chronological order
+            [...attendanceLogs].reverse().forEach(l => {
+                const key = `${l.name}||${l.date}`;
+                if (!seen.has(key)) { seen.add(key); pairs.push({ name: l.name, date: l.date }); }
+            });
+            return pairs;
         }
 
         function switchTab(tabId, event) {
@@ -659,9 +826,81 @@
             event.target.classList.add('active');
             mainScroller.scrollTop = 0;
 
-            if (tabId === 'staff-tab') {
-                renderStaffDirectoryList();
+            if (tabId === 'staff-tab') renderStaffDirectoryList();
+            if (tabId === 'hours-tab') renderHoursTab();
+        }
+
+        function hoursTabInit(event) {
+            switchTab('hours-tab', event);
+        }
+
+        function renderHoursTab() {
+            const filterName = document.getElementById('hours-filter-name').value;
+            const filterDate = document.getElementById('hours-filter-date').value;
+
+            // Populate filter dropdowns
+            const pairs = getUniquePersonDays();
+            const allNames = [...new Set(pairs.map(p => p.name))].sort();
+            const allDates = [...new Set(pairs.map(p => p.date))].reverse();
+
+            const nameSelect = document.getElementById('hours-filter-name');
+            const dateSelect = document.getElementById('hours-filter-date');
+            const prevName = nameSelect.value;
+            const prevDate = dateSelect.value;
+            nameSelect.innerHTML = '<option value="">All Staff</option>' + allNames.map(n => `<option value="${n}" ${n===prevName?'selected':''}>${n}</option>`).join('');
+            dateSelect.innerHTML = '<option value="">All Dates</option>' + allDates.map(d => `<option value="${d}" ${d===prevDate?'selected':''}>${d}</option>`).join('');
+
+            // Filter pairs
+            const filtered = pairs.filter(p =>
+                (!filterName || p.name === filterName) &&
+                (!filterDate || p.date === filterDate)
+            );
+
+            if (filtered.length === 0) {
+                document.getElementById('hours-summary-list').innerHTML = `<div class="hours-empty">No attendance records found.</div>`;
+                return;
             }
+
+            // Group by date
+            const byDate = {};
+            filtered.forEach(p => {
+                if (!byDate[p.date]) byDate[p.date] = [];
+                byDate[p.date].push(p.name);
+            });
+
+            // Sort dates newest first
+            const sortedDates = Object.keys(byDate).sort((a, b) => new Date(b) - new Date(a));
+
+            const html = sortedDates.map(date => {
+                const staffRows = byDate[date].map(name => {
+                    const net = computeNetHours(name, date);
+                    const pillClass = net && net.formatted ? 'hours-net-pill' : 'hours-net-pill incomplete';
+                    const pillText = net && net.formatted ? net.formatted : 'Incomplete';
+                    const metaText = net
+                        ? `First: ${net.firstTime || '—'} &nbsp;|&nbsp; Last: ${net.lastTime || '—'}`
+                        : '—';
+
+                    return `
+                        <div class="hours-staff-row">
+                            <div>
+                                <div class="hours-staff-name">${name}</div>
+                                <div class="hours-staff-meta">${metaText}</div>
+                            </div>
+                            <div class="${pillClass}">${pillText}</div>
+                        </div>`;
+                }).join('');
+
+                return `
+                    <div class="hours-day-block">
+                        <div class="hours-day-header">
+                            <span class="hours-day-date">📅 ${date}</span>
+                            <span style="font-size:12px;color:#8e8e93;">${byDate[date].length} staff</span>
+                        </div>
+                        ${staffRows}
+                    </div>`;
+            }).join('');
+
+            document.getElementById('hours-summary-list').innerHTML = html;
         }
 
         function renderStaffDirectoryList() {
@@ -705,35 +944,64 @@
             }
         }
 
-        function startCamera() {
+        async function startCamera() {
+            // Guard: if we already have a live stream, just reattach it — never ask permission again
+            if (persistentStream && persistentStream.active) {
+                persistentStream.getTracks().forEach(t => { t.enabled = true; });
+                if (video.srcObject !== persistentStream) video.srcObject = persistentStream;
+                video.play().catch(() => {});
+                registerBtn.disabled = false;
+                return;
+            }
+
             const constraints = {
                 video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
                 audio: false
             };
 
-            navigator.mediaDevices.getUserMedia(constraints)
-                .then(stream => {
-                    video.srcObject = stream;
-                    statusDiv.innerText = "System Idle: Waiting for Staff...";
-                    statusDiv.className = "active-scan";
-                    registerBtn.disabled = false;
-                    video.play().catch(e => console.log("Video play interrupted:", e));
-                })
-                .catch(err => {
-                    statusDiv.innerText = "Camera access error. Verify permissions.";
-                    console.error(err);
-                });
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                persistentStream = stream;          // store permanently
+                cameraPermissionGranted = true;
+                video.srcObject = stream;
+                statusDiv.innerText = "System Idle: Waiting for Staff...";
+                statusDiv.className = "active-scan";
+                registerBtn.disabled = false;
+                video.play().catch(e => console.log("Video play interrupted:", e));
+            } catch (err) {
+                statusDiv.innerText = "Camera access error. Verify permissions.";
+                console.error(err);
+            }
         }
 
         function startCameraHeartbeatMonitor() {
             if (heartbeatIntervalId) clearInterval(heartbeatIntervalId);
-            heartbeatIntervalId = setInterval(() => {
-                if (!video.paused && video.srcObject) {
-                    if (video.currentTime === lastVideoFrameTime) {
-                        restartCameraSafely();
-                    } else {
-                        lastVideoFrameTime = video.currentTime;
+            heartbeatIntervalId = setInterval(async () => {
+                if (!video.srcObject) return;
+
+                const tracks = video.srcObject.getVideoTracks();
+                const trackDead = tracks.length === 0 || tracks[0].readyState === 'ended';
+
+                if (trackDead) {
+                    // Track truly died (e.g. camera stolen by another app) — hard restart
+                    await hardRestartCamera();
+                    return;
+                }
+
+                // Detect frozen frame: video.currentTime stopped advancing while it should be playing
+                if (!video.paused && video.currentTime === lastVideoFrameTime && video.currentTime > 0) {
+                    console.warn("Video frame frozen — attempting soft recovery.");
+                    // Soft recovery: pause and replay WITHOUT stopping the stream
+                    try {
+                        video.pause();
+                        await new Promise(r => setTimeout(r, 300));
+                        await video.play();
+                    } catch (e) {
+                        // If soft recovery fails, do a hard restart
+                        await hardRestartCamera();
                     }
+                } else {
+                    lastVideoFrameTime = video.currentTime;
                 }
             }, 3000);
         }
@@ -839,20 +1107,30 @@
         registerBtn.addEventListener('click', async () => {
             const name = staffNameInput.value.trim();
             if (!name) return alert("Please enter a name first.");
+
+            // Block duplicate registrations — one profile covers Clock In AND Clock Out
+            const alreadyExists = registeredProfiles.some(p => p.name.toLowerCase() === name.toLowerCase());
+            if (alreadyExists) {
+                alert(`"${name}" is already registered. No need to register again — the same profile handles both Clock In and Clock Out.`);
+                staffNameInput.value = '';
+                staffNameInput.blur();
+                return;
+            }
                           
-            statusDiv.innerText = "Capturing...";
+            statusDiv.innerText = "Capturing face...";
             const descriptor = await getFaceDescriptor();
                           
             if (descriptor) {
                 registeredProfiles.push({ name, descriptor: Array.from(descriptor) });
                 localStorage.setItem('registeredProfiles', JSON.stringify(registeredProfiles));
                                   
-                statusDiv.innerText = `Registered: ${name}`;
+                statusDiv.innerText = `✅ Registered: ${name}`;
+                statusDiv.className = "success-scan";
                 staffNameInput.value = '';
                 staffNameInput.blur();
-                setTimeout(() => { statusDiv.innerText = "System Idle: Waiting for Staff..."; statusDiv.className="active-scan"; }, 2000);
+                setTimeout(() => { statusDiv.innerText = "System Idle: Waiting for Staff..."; statusDiv.className="active-scan"; }, 2500);
             } else {
-                statusDiv.innerText = "No face seen. Try again.";
+                statusDiv.innerText = "No face detected. Please stand in front of the camera.";
             }
         });
 
@@ -861,15 +1139,41 @@
             return targetedMatches[targetedMatches.length - 1] === currentLog;
         }
 
+        function checkIsLastDailyLog(currentLog, fullDatabase) {
+            const targetedMatches = fullDatabase.filter(item => item.date === currentLog.date && item.name === currentLog.name);
+            return targetedMatches[0] === currentLog;
+        }
+
         function renderLogs() {
+            // Cache net hours per person+date so we don't recompute per row
+            const netCache = {};
+            const getNet = (name, date) => {
+                const key = `${name}||${date}`;
+                if (!(key in netCache)) netCache[key] = computeNetHours(name, date);
+                return netCache[key];
+            };
+
             logBody.innerHTML = attendanceLogs.map(log => {
-                const isFirstEntryOfDailyContext = checkIsFirstDailyLog(log, attendanceLogs);
-                const appliedClass = isFirstEntryOfDailyContext ? 'first-log-entry' : '';
+                const isFirst = checkIsFirstDailyLog(log, attendanceLogs);
+                const isLast  = checkIsLastDailyLog(log, attendanceLogs);
+                const appliedClass = isFirst ? 'first-log-entry' : '';
+
                 const modeBadge = log.mode === 'in'
                     ? '<span class="badge-in">IN</span>'
                     : log.mode === 'out'
                         ? '<span class="badge-out">OUT</span>'
                         : '';
+
+                // Net hours cell: only show on the last (most-recent) row of that person+day
+                let netCell = '';
+                if (isLast) {
+                    const net = getNet(log.name, log.date);
+                    netCell = net && net.formatted
+                        ? `<span style="color:var(--success);font-weight:700;font-size:12px;">${net.formatted}</span>`
+                        : `<span style="color:#8e8e93;font-size:11px;">—</span>`;
+                } else {
+                    netCell = `<span style="color:#e5e5ea;font-size:11px;">···</span>`;
+                }
                                   
                 return `
                     <tr class="${appliedClass}">
@@ -877,6 +1181,7 @@
                         <td>${log.date}</td>
                         <td>${log.time}</td>
                         <td>${modeBadge}</td>
+                        <td>${netCell}</td>
                     </tr>
                 `;
             }).join('');
@@ -884,6 +1189,12 @@
 
         function generateLogsHtmlTable() {
             if(attendanceLogs.length === 0) return "<p>No entries logged for this period.</p>";
+            const netCache = {};
+            const getNet = (name, date) => {
+                const key = `${name}||${date}`;
+                if (!(key in netCache)) netCache[key] = computeNetHours(name, date);
+                return netCache[key];
+            };
             return `
                 <table style='border-collapse:collapse;width:100%;'>
                     <thead style='background:#f2f2f7;'>
@@ -892,20 +1203,27 @@
                             <th style='border:1px solid #ccc;padding:8px;text-align:left;'>Date</th>
                             <th style='border:1px solid #ccc;padding:8px;text-align:left;'>Time</th>
                             <th style='border:1px solid #ccc;padding:8px;text-align:left;'>Mode</th>
+                            <th style='border:1px solid #ccc;padding:8px;text-align:left;'>Net Hours</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${attendanceLogs.map(log => {
                             const isFirst = checkIsFirstDailyLog(log, attendanceLogs);
+                            const isLast  = checkIsLastDailyLog(log, attendanceLogs);
                             const inlineStyle = isFirst ? "style='border:1px solid #ccc;padding:8px;color:#007aff;font-weight:bold;'" : "style='border:1px solid #ccc;padding:8px;'";
                             const modeText = log.mode === 'in' ? 'Clock In' : log.mode === 'out' ? 'Clock Out' : '';
-                                                          
+                            let netText = '';
+                            if (isLast) {
+                                const net = getNet(log.name, log.date);
+                                netText = net && net.formatted ? net.formatted : '—';
+                            }
                             return `
                                 <tr>
                                     <td ${inlineStyle}>${log.name}</td>
                                     <td ${inlineStyle}>${log.date}</td>
                                     <td ${inlineStyle}>${log.time}</td>
                                     <td ${inlineStyle}>${modeText}</td>
+                                    <td style='border:1px solid #ccc;padding:8px;color:#2e7d32;font-weight:${netText?'700':'400'};'>${netText}</td>
                                 </tr>
                             `;
                         }).join('')}
@@ -1012,12 +1330,23 @@
 
         function exportToExcel() {
             if (attendanceLogs.length === 0) return alert("No logs to export.");
-            const exportData = attendanceLogs.map(l => ({
-                Name: l.name,
-                Date: l.date,
-                Time: l.time,
-                Mode: l.mode === 'in' ? 'Clock In' : l.mode === 'out' ? 'Clock Out' : ''
-            }));
+            const netCache = {};
+            const getNet = (name, date) => {
+                const key = `${name}||${date}`;
+                if (!(key in netCache)) netCache[key] = computeNetHours(name, date);
+                return netCache[key];
+            };
+            const exportData = attendanceLogs.map(l => {
+                const isLast = checkIsLastDailyLog(l, attendanceLogs);
+                const net = isLast ? getNet(l.name, l.date) : null;
+                return {
+                    Name: l.name,
+                    Date: l.date,
+                    Time: l.time,
+                    Mode: l.mode === 'in' ? 'Clock In' : l.mode === 'out' ? 'Clock Out' : '',
+                    'Net Hours Worked': net && net.formatted ? net.formatted : ''
+                };
+            });
             const worksheet = XLSX.utils.json_to_sheet(exportData);
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance");
