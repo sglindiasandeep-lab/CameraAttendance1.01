@@ -778,32 +778,39 @@
                 return { firstTime: firstEntry.time, lastTime: null, diffMs: null, formatted: null };
             }
 
-            // Parse time strings to Date objects using today's date as base
-            const parseTime = (timeStr, dateRef) => {
-                const [timePart, meridiem] = timeStr.split(' ');
-                let [h, m, s] = timePart.split(':').map(Number);
-                if (meridiem) {
-                    if (meridiem.toLowerCase() === 'pm' && h !== 12) h += 12;
-                    if (meridiem.toLowerCase() === 'am' && h === 12) h = 0;
-                }
-                const d = new Date(dateRef + ' 2000'); // use year 2000 as neutral base
-                d.setHours(h, m, s || 0, 0);
-                return d;
+            // Robust time parser — handles all iOS/locale variants:
+            // "9:00:17 PM", "09:00:17 PM", "9:00:17 am", "21:00:17", "9:00 PM"
+            const parseTime = (timeStr) => {
+                if (!timeStr) return null;
+                const str = timeStr.trim();
+                // Match: optional leading digits, colon groups, optional AM/PM
+                const match = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?$/i);
+                if (!match) return null;
+                let h = parseInt(match[1], 10);
+                const m = parseInt(match[2], 10);
+                const s = match[3] ? parseInt(match[3], 10) : 0;
+                const meridiem = match[4] ? match[4].toLowerCase() : null;
+                if (meridiem === 'pm' && h !== 12) h += 12;
+                if (meridiem === 'am' && h === 12) h = 0;
+                // Return total seconds from midnight for easy subtraction
+                return h * 3600 + m * 60 + s;
             };
 
-            const tIn  = parseTime(firstEntry.time, dateStr);
-            const tOut = parseTime(lastEntry.time, dateStr);
-            const diffMs = tOut - tIn;
+            const tIn  = parseTime(firstEntry.time);
+            const tOut = parseTime(lastEntry.time);
 
-            if (diffMs <= 0) return { firstTime: firstEntry.time, lastTime: lastEntry.time, diffMs: null, formatted: null };
+            if (tIn === null || tOut === null) return { firstTime: firstEntry.time, lastTime: lastEntry.time, diffMs: null, formatted: null };
 
-            const totalSec = Math.round(diffMs / 1000);
-            const h = Math.floor(totalSec / 3600);
-            const m = Math.floor((totalSec % 3600) / 60);
-            const s = totalSec % 60;
+            const diffSec = tOut - tIn;
+
+            if (diffSec <= 0) return { firstTime: firstEntry.time, lastTime: lastEntry.time, diffMs: null, formatted: null };
+
+            const h = Math.floor(diffSec / 3600);
+            const m = Math.floor((diffSec % 3600) / 60);
+            const s = diffSec % 60;
             const formatted = `${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
 
-            return { firstTime: firstEntry.time, lastTime: lastEntry.time, diffMs, formatted };
+            return { firstTime: firstEntry.time, lastTime: lastEntry.time, diffMs: diffSec * 1000, formatted };
         }
 
         // Returns unique sorted [{ name, date }] pairs from logs
